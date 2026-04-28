@@ -6,6 +6,8 @@ import type { ModelId } from '../llm/models.js'
 import { getModel } from '../llm/client.js'
 import { toAiSdkToolSet } from '../tools/registry.js'
 import { getSlashCommand, parseSlashLine } from '../slash/registry.js'
+import { renderMarkdown, isTtyOutput } from '../render/markdown.js'
+import { Indicator } from '../render/indicator.js'
 
 export interface ChatContext {
   config: LoadedConfig
@@ -13,9 +15,11 @@ export interface ChatContext {
   yolo: boolean
   messages: ModelMessage[]
   rl: ReadlineInterface
+  pauseIndicator: () => void
+  resumeIndicator: () => void
 }
 
-export type SessionInit = Omit<ChatContext, 'messages' | 'rl'>
+export type SessionInit = Omit<ChatContext, 'messages' | 'rl' | 'pauseIndicator' | 'resumeIndicator'>
 
 const SYSTEM_BASE = (cwd: string) =>
   `You are a local CLI agent running on the user's computer. You have tools to read files, list directories, write new files, edit existing files via string match, and run shell commands. Use the tools to investigate before answering. Prefer surgical edits over rewrites. The user is working in: ${cwd}.`
@@ -26,9 +30,17 @@ function buildSystemPrompt(ctx: ChatContext): string {
   return `${base}\n\n# Project Memory\n${ctx.config.projectMemory}`
 }
 
+const noop = (): void => {}
+
 export async function startChat(init: SessionInit): Promise<void> {
   const rl = createInterface({ input: stdin, output: stdout })
-  const ctx: ChatContext = { ...init, messages: [], rl }
+  const ctx: ChatContext = {
+    ...init,
+    messages: [],
+    rl,
+    pauseIndicator: noop,
+    resumeIndicator: noop,
+  }
 
   console.log(
     `or — chatting with ${ctx.activeModel}${ctx.yolo ? ' (yolo)' : ''}. /help for commands, /exit or Ctrl+D to quit.`,
@@ -63,6 +75,8 @@ export async function runOneShot(prompt: string, init: SessionInit): Promise<voi
     ...init,
     messages: [{ role: 'user', content: prompt }],
     rl,
+    pauseIndicator: noop,
+    resumeIndicator: noop,
   }
   try {
     await runAgenticTurn(ctx)
@@ -83,7 +97,14 @@ async function runSlash(line: string, ctx: ChatContext): Promise<void> {
 }
 
 async function runAgenticTurn(ctx: ChatContext): Promise<void> {
+  const indicator = new Indicator()
+  ctx.pauseIndicator = () => indicator.pause()
+  ctx.resumeIndicator = () => indicator.resume()
+  let buffered = ''
+
   try {
+    indicator.start()
+
     const result = streamText({
       model: getModel(ctx.activeModel),
       system: buildSystemPrompt(ctx),
@@ -93,13 +114,28 @@ async function runAgenticTurn(ctx: ChatContext): Promise<void> {
     })
 
     for await (const chunk of result.textStream) {
-      stdout.write(chunk)
+      buffered += chunk
     }
-    stdout.write('\n')
+
+    indicator.stop()
+    emit(buffered)
 
     const final = await result.response
     ctx.messages.push(...final.messages)
   } catch (err) {
-    console.error(`\nerror: ${(err as Error).message}`)
+    indicator.stop()
+    if (buffered) emit(buffered)
+    console.error(`error: ${(err as Error).message}`)
+  } finally {
+    indicator.stop()
+    ctx.pauseIndicator = noop
+    ctx.resumeIndicator = noop
   }
+}
+
+function emit(text: string): void {
+  if (!text) return
+  const out = isTtyOutput() ? renderMarkdown(text) : text
+  stdout.write(out)
+  if (!out.endsWith('\n')) stdout.write('\n')
 }

@@ -55,6 +55,12 @@ Default: `anthropic/claude-haiku-4.5`.
 
 If `AGENTS.md` (or `OR.md`) exists in the current working directory, its contents are prepended to the system prompt for the session.
 
+### Output rendering
+
+In a TTY, model responses are rendered as markdown — headings, bold, lists, links, and syntax-highlighted code fences. While the model is working, a small spinner with elapsed-seconds counter shows on a single line and clears before the response prints.
+
+When stdout is piped or redirected, the model's response is emitted as raw markdown with no ANSI escape codes and no spinner — so `or "..." > out.md` and `or "..." | grep ...` work as expected.
+
 ### Configuration
 
 Optional config file at `~/.config/or/config.json`:

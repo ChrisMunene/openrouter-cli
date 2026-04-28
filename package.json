@@ -17,6 +17,9 @@
   "dependencies": {
     "@openrouter/ai-sdk-provider": "^2.8.1",
     "ai": "^6.0.0",
+    "cli-highlight": "^2.1.11",
+    "marked": "^15.0.12",
+    "marked-terminal": "^7.3.0",
     "mri": "^1.2.0",
     "zod": "^3.25.0"
   },

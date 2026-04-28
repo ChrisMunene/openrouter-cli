@@ -26,11 +26,14 @@ export async function checkPermission(
   return serialize(async () => {
     const summary = formatSummary(t, args)
     const prompt = `\n→ ${t.name} [${t.risk}] ${summary}\n  Allow? [y/N] `
+    ctx.pauseIndicator()
     let answer: string
     try {
       answer = await ctx.rl.question(prompt)
     } catch {
       return { allow: false, reason: 'input closed' }
+    } finally {
+      ctx.resumeIndicator()
     }
     return answer.trim().toLowerCase().startsWith('y')
       ? { allow: true }
