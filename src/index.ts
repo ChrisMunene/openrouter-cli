@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 import mri from 'mri'
 import { loadConfig } from './config/load.js'
+import { runConfigCommand } from './config/command.js'
 import { initLLM } from './llm/client.js'
 import { isKnownModel, MODEL_IDS, type ModelId } from './llm/models.js'
-import { startChat, runOneShot, type ChatContext } from './chat/loop.js'
+import { startChat, runOneShot, type SessionInit } from './chat/loop.js'
+import { registerDefaultTools } from './tools/index.js'
+import { registerDefaultSlashCommands } from './slash/commands.js'
 
 const HELP = `or — local CLI agent powered by OpenRouter
 
@@ -18,7 +21,7 @@ Flags:
   --model <id>                Override the active model for this session
   --yolo                      Auto-approve all tool calls
 
-Required env:
+Required env (or set in .env.local):
   OPENROUTER_API_KEY          OpenRouter API key
 
 Hardcoded models:
@@ -43,23 +46,23 @@ async function main(): Promise<void> {
 
   if (positional[0] && KNOWN_SUBCOMMANDS.has(positional[0])) {
     if (positional[0] === 'config') {
-      // Phase 5
-      console.error('config subcommand not implemented yet (Phase 5)')
-      process.exit(2)
+      await runConfigCommand(positional.slice(1))
     }
     return
   }
 
   const config = loadConfig()
   initLLM(config.apiKey)
+  registerDefaultTools()
+  registerDefaultSlashCommands()
 
   const activeModel = resolveActiveModel(args.model, config.defaultModel)
-  const ctx: ChatContext = { config, activeModel, yolo: !!args.yolo }
+  const init: SessionInit = { config, activeModel, yolo: !!args.yolo }
 
   if (positional.length === 0) {
-    await startChat(ctx)
+    await startChat(init)
   } else {
-    await runOneShot(positional.join(' '), ctx)
+    await runOneShot(positional.join(' '), init)
   }
 }
 
